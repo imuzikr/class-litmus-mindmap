@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 마인드맵 변환기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Gowun Dodum', sans-serif;
+        }
+        /* D3.js Styles */
+        .link { fill: none; stroke: #adb5bd; stroke-width: 2px; }
+        .node-content { transition: transform 0.3s ease; cursor: pointer; }
+        .node:hover .node-content { transform: scale(1.05); }
+        .node text { font-size: 14px; font-weight: 500; pointer-events: none; }
+        .button-group { cursor: pointer; }
+        .button-group circle { fill: #fff; stroke: #adb5bd; stroke-width: 2px; transition: fill 0.3s ease, stroke 0.3s ease; }
+        .button-group:hover circle { fill: #e9ecef; stroke: #495057; }
+        .indicator-text { font-family: monospace; font-size: 20px; font-weight: bold; pointer-events: none; }
+        
+        /* Loader Animation */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Modal Styles */
+        #modal-close-btn { font-size: 2rem; line-height: 1; }
+        
+        /* Evaluation Results Styles */
+        #evaluation-results h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1e3a8a; /* Dark Blue */
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        #evaluation-results ul {
+            list-style-type: disc;
+            list-style-position: inside;
+            padding-left: 0.5rem;
+        }
+        #evaluation-results li {
+            margin-bottom: 0.5rem;
+        }
+        #evaluation-results p {
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+    <div class="w-full max-w-7xl h-full mx-auto flex flex-col gap-6">
+        <!-- 앱 제목 -->
+        <h1 id="main-title" class="text-6xl md:text-7xl font-bold text-center text-gray-800 mb-8">마인드맵으로 생각 펼치기</h1>
+
+        <!-- 학습 목표 및 성취 기준 섹션 -->
+        <div id="learning-goals-container" class="bg-indigo-50 rounded-xl shadow-lg p-6 border-l-4 border-indigo-500">
+            <h2 class="text-xl font-bold text-indigo-800 mb-2">학습 목표</h2>
+            <ul class="list-disc list-inside text-gray-700">
+                <li>산과 염기의 정의를 설명할 수 있다.</li>
+            </ul>
+            <h2 class="text-xl font-bold text-indigo-800 mt-4 mb-2">성취 기준</h2>
+            <ul class="list-disc list-inside text-gray-700">
+                <li>지시약의 색 변화를 관찰하고 바르게 설명할 수 있다.</li>
+            </ul>
+        </div>
+
+        <!-- 텍스트 입력 및 마인드맵 생성 영역 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8" style="min-height: 60vh;">
+            <!-- 왼쪽: 텍스트 입력 패널 -->
+            <div id="text-input-parent" class="bg-white rounded-xl shadow-lg flex flex-col p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h1 class="text-2xl font-bold text-gray-800">텍스트 입력</h1>
+                    <button id="text-fullscreen-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300">
+                        전체화면
+                    </button>
+                </div>
+                <textarea id="text-input" class="w-full flex-grow p-4 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="분석하고 싶은 텍스트를 여기에 붙여넣으세요..."></textarea>
+                <button id="generate-btn" class="mt-4 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5c2.2 0 4.3 1.2 5.5 3"/><path d="M18.4 6.5c1.2 1.2 1.9 2.8 2.1 4.5"/><path d="M21.5 14.5c0 2.2-1.2 4.3-3 5.5"/><path d="M14.5 21.5c-1.7.2-3.3.1-5-.5"/><path d="M6.5 18.4c-1.2-1.2-1.9-2.8-2.1-4.5"/><path d="M2.5 9.5c0-2.2 1.2-4.3 3-5.5"/><path d="M12 8v4l2 2"/><circle cx="12" cy="12" r="10"/></svg>
+                    <span>AI 마인드맵 생성</span>
+                </button>
+            </div>
+
+            <!-- 오른쪽: AI 생성 마인드맵 -->
+            <div class="bg-white rounded-xl shadow-lg flex flex-col p-6">
+                 <div class="mb-4">
+                     <h1 class="text-2xl font-bold text-gray-800">AI 생성 마인드맵</h1>
+                </div>
+                <div id="mindmap-container" class="flex-grow w-full border border-gray-300 rounded-lg overflow-hidden relative bg-white"></div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                    <button id="expand-all-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300 text-sm">모두 펼치기</button>
+                    <button id="collapse-all-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300 text-sm">모두 접기</button>
+                    <button id="fullscreen-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300 text-sm">전체화면</button>
+                    <button id="fit-screen-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300 text-sm">화면맞춤</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- AI 학습 성취도 평가 섹션 -->
+        <div class="bg-white rounded-xl shadow-lg flex flex-col p-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-4">AI 학습 성취도 평가</h1>
+            <div id="evaluation-results" class="w-full border border-gray-300 rounded-lg p-4 overflow-y-auto transition-all duration-500">
+                <p class="text-gray-500">마인드맵이 생성된 후, 아래 버튼을 눌러 학습 성취도에 대한 AI 평가를 받아보세요.</p>
+            </div>
+            <button id="evaluate-btn" class="mt-4 w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition duration-300 flex items-center justify-center gap-2" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><path d="m15 5 3 3"/></svg>
+                <span>학습 성취도 평가받기</span>
+            </button>
+             <button id="download-pdf-btn" class="mt-4 w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 transition duration-300 flex items-center justify-center gap-2" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>PDF 다운로드</span>
+            </button>
+        </div>
+
+    </div>
+
+    <!-- 상세 내용 표시를 위한 Modal -->
+    <div id="details-modal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center p-4 transition-opacity duration-300 ease-in-out opacity-0">
+        <div id="modal-panel" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col transform transition-all duration-300 ease-in-out scale-95 opacity-0">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-bold text-gray-800">상세 내용</h2>
+                <button id="modal-close-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
+            </div>
+            <div id="modal-content" class="p-6 overflow-y-auto text-gray-700 leading-relaxed"></div>
+        </div>
+    </div>
+    
+    <!-- 전체화면 마인드맵을 위한 컨테이너 -->
+    <div id="fullscreen-container" class="fixed inset-0 bg-white z-[9999] hidden p-4 flex flex-col">
+         <div class="flex justify-end mb-4 gap-2">
+             <button id="fullscreen-fit-screen-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300">화면맞춤</button>
+             <button id="fullscreen-close-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">전체화면 닫기</button>
+         </div>
+         <div id="fullscreen-mindmap-target" class="flex-grow w-full h-full border border-gray-300 rounded-lg overflow-hidden relative"></div>
+    </div>
+    
+    <!-- 전체화면 텍스트 입력을 위한 컨테이너 -->
+    <div id="text-fullscreen-container" class="fixed inset-0 bg-white z-[9999] hidden p-4 flex flex-col">
+         <div class="flex justify-end mb-4">
+             <button id="text-fullscreen-close-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">전체화면 닫기</button>
+         </div>
+         <div id="text-fullscreen-target" class="flex-grow w-full h-full">
+             <!-- The textarea will be moved here -->
+         </div>
+    </div>
+
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <script>
+        // --- 요소 가져오기 ---
+        const textInput = document.getElementById('text-input');
+        const generateBtn = document.getElementById('generate-btn');
+        const mindmapContainer = document.getElementById('mindmap-container');
+        const fitScreenBtn = document.getElementById('fit-screen-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const fullscreenContainer = document.getElementById('fullscreen-container');
+        const fullscreenCloseBtn = document.getElementById('fullscreen-close-btn');
+        const fullscreenMindmapTarget = document.getElementById('fullscreen-mindmap-target');
+        const fullscreenFitScreenBtn = document.getElementById('fullscreen-fit-screen-btn');
+        const textFullscreenBtn = document.getElementById('text-fullscreen-btn');
+        const textFullscreenContainer = document.getElementById('text-fullscreen-container');
+        const textFullscreenCloseBtn = document.getElementById('text-fullscreen-close-btn');
+        const textFullscreenTarget = document.getElementById('text-fullscreen-target');
+        const textInputParent = document.getElementById('text-input-parent');
+        const modal = document.getElementById('details-modal'), modalPanel = document.getElementById('modal-panel'), modalContent = document.getElementById('modal-content'), modalCloseBtn = document.getElementById('modal-close-btn');
+        const learningGoalsContainer = document.getElementById('learning-goals-container');
+        const evaluateBtn = document.getElementById('evaluate-btn');
+        const evaluationResults = document.getElementById('evaluation-results');
+        const downloadPdfBtn = document.getElementById('download-pdf-btn');
+        const expandAllBtn = document.getElementById('expand-all-btn');
+        const collapseAllBtn = document.getElementById('collapse-all-btn');
+        
+        let mindmapRootNode = null;
+        let updateMindmap = null;
+        let currentZoomBehavior = null;
+
+        // --- 모달 로직 ---
+        modalCloseBtn.addEventListener('click', hideDetailsModal);
+        modal.addEventListener('click', (e) => (e.target === modal) && hideDetailsModal());
+        function showDetailsModal(description) { modalContent.innerHTML = description.replace(/\n/g, '<br>'); modal.classList.remove('hidden'); requestAnimationFrame(() => { modal.classList.remove('opacity-0'); modalPanel.classList.remove('scale-95', 'opacity-0'); }); }
+        function hideDetailsModal() { modal.classList.add('opacity-0'); modalPanel.classList.add('scale-95', 'opacity-0'); setTimeout(() => modal.classList.add('hidden'), 300); }
+
+        // --- AI 마인드맵 생성 로직 ---
+        generateBtn.addEventListener('click', generateMindmapWithAI);
+        async function generateMindmapWithAI() {
+            const userText = textInput.value;
+            if (!userText.trim()) { mindmapContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">분석할 텍스트를 입력해주세요.</div>'; return; }
+            mindmapContainer.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-gray-500"><div class="loader"></div><p class="mt-4">AI가 마인드맵을 생성중입니다...</p></div>';
+            generateBtn.disabled = true; evaluateBtn.disabled = true; downloadPdfBtn.disabled = true;
+            const apiKey = ""; const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const systemPrompt = `당신은 마인드맵 생성 전문가입니다. 사용자의 텍스트를 분석하여 마인드맵 시각화에 적합한 계층적 JSON 형식으로 구조화해야 합니다. 규칙: 1. 텍스트의 핵심 주제를 찾아 루트 노드로 설정합니다. 2. 주요 개념과 아이디어를 추출하여 첫 번째 자식 노드로 만듭니다. 3. 각 주요 개념을 뒷받침하는 세부 정보, 예시, 하위 주제를 찾아 중첩된 자식 노드로 구성합니다. 4. 각 노드는 간결한 'keyword'(1~4 단어)와 상세한 'description'(1~3 문장)을 포함해야 합니다. 5. 반드시 제공된 스키마를 엄격히 준수하는 유효한 단일 JSON 객체만 출력해야 합니다.`;
+            const schema = { type: 'OBJECT', properties: { keyword: { type: 'STRING' }, description: { type: 'STRING' }, children: { type: 'ARRAY', items: { type: 'OBJECT', properties: { keyword: { type: 'STRING' }, description: { type: 'STRING' }, children: { type: 'ARRAY', items: { type: 'OBJECT', properties: { keyword: { type: 'STRING' }, description: { type: 'STRING' }, children: { type: 'ARRAY', items: { type: 'OBJECT', properties: { keyword: { type: 'STRING' }, description: { type: 'STRING' } }, required: ['keyword', 'description'] } } }, required: ['keyword', 'description'] } } }, required: ['keyword', 'description'] } } }, required: ['keyword', 'description'] };
+            const payload = { contents: [{ parts: [{ text: userText }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
+            try {
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`API 호출 실패: ${response.status}`);
+                const result = await response.json(); const jsonText = result.candidates[0].content.parts[0].text;
+                const mindmapData = JSON.parse(jsonText); aiMindmapJsonData = mindmapData;
+                let idCounter = 0; function assignIds(node) { node.id = `node-${idCounter++}`; if (node.children) node.children.forEach(assignIds); }
+                assignIds(mindmapData); renderMindmap(mindmapData);
+                evaluateBtn.disabled = false;
+            } catch (error) { console.error("마인드맵 생성 오류:", error); mindmapContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-500">마인드맵 생성에 실패했습니다.</div>`;
+            } finally { generateBtn.disabled = false; }
+        }
+
+        // --- AI 학습 성취도 평가 로직 ---
+        evaluateBtn.addEventListener('click', evaluateAchievement);
+        
+        function parseMarkdown(text) {
+            let html = text
+                .replace(/### (.*)/g, '<h3>$1</h3>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            html = html.replace(/((?:\n(?:-|\*) [^\n]+)+)/g, (listBlock) => {
+                const items = listBlock.trim().split('\n');
+                const listItemsHtml = items.map(item => `<li>${item.substring(2).trim()}</li>`).join('');
+                return `<ul>${listItemsHtml}</ul>`;
+            });
+
+            html = html.replace(/\n/g, '<br>');
+            html = html.replace(/<\/ul>(<br\s*\/?>)+/g, '</ul>');
+            html = html.replace(/(<br\s*\/?>)+<h3>/g, '<h3>');
+
+            return html;
+        }
+
+        async function evaluateAchievement() {
+            if (!aiMindmapJsonData) { evaluationResults.innerHTML = '<p class="text-yellow-600">먼저 AI 마인드맵을 생성해주세요.</p>'; return; }
+            const learningGoalsText = learningGoalsContainer.innerText;
+            const userText = textInput.value;
+            evaluationResults.innerHTML = '<div class="flex flex-col items-center justify-center h-full"><div class="loader"></div><p class="mt-4 text-gray-500">AI가 학습 성취도를 평가중입니다...</p></div>';
+            evaluateBtn.disabled = true;
+            const apiKey = ""; const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const systemPrompt = `당신은 학생들의 학습을 돕는 친절하고 지지적인 AI 학습 코치입니다. 제공된 '학습 목표/성취 기준', '학생이 작성한 텍스트', 그리고 '텍스트 기반 마인드맵 구조'를 종합적으로 분석하여 학생의 성취도를 평가해주세요. 평가 지침: 1. **긍정적 강화**: 평가를 시작할 때, 학생이 잘한 점을 구체적으로 칭찬하여 자신감과 성취감을 높여주세요. 2. **건설적 피드백**: 개선할 점은 비판이 아닌, 성장을 위한 구체적이고 실행 가능한 '발전 제안'으로 제시해주세요. 3. **오류 수정**: 학생의 텍스트에 학습 목표와 관련된 명백한 사실적 오류나 중요한 누락이 있다면, '이렇게 더 성장해볼까요?' 섹션에서 부드럽게 지적하고 올바른 정보를 제공해주세요. 4. **격려하는 어조**: 전체적으로 학생의 노력을 인정하고 격려하는 따뜻하고 지지적인 어조를 유지해주세요. 객관적 사실에 기반하되, 표현은 학생의 자기효능감을 높이는 방향으로 작성해야 합니다. 응답은 반드시 마크다운을 사용하여 다음 형식에 맞춰 한국어로 작성해주세요: ### 🌟 정말 잘했어요! - [학생의 텍스트와 마인드맵에서 학습 목표를 성공적으로 달성한 부분을 구체적으로 칭찬합니다. (1~2가지)] ### 🌱 이렇게 더 성장해볼까요? - [학습 목표와 관련하여 내용을 더 깊이있게 만들거나 구조를 개선할 수 있는 구체적인 아이디어를 제안합니다. (1~2가지)] ### 📝 종합 평가 - [학생의 학습 과정과 노력을 인정하는 격려의 메시지와 함께, 학습 목표 달성도에 대한 종합적인 평가를 부드럽게 전달합니다.]`;
+            
+            const fullPrompt = `## 학습 목표 및 성취 기준:\n${learningGoalsText}\n\n## 학생이 작성한 텍스트:\n${userText}\n\n## 생성된 마인드맵 구조 (JSON):\n${JSON.stringify(aiMindmapJsonData, null, 2)}`;
+            const payload = {
+                contents: [{ parts: [{ text: fullPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            try {
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`API 호출 실패: ${response.status}`);
+                const result = await response.json();
+                let evaluationText = result.candidates[0].content.parts[0].text;
+                evaluationResults.innerHTML = parseMarkdown(evaluationText);
+                downloadPdfBtn.disabled = false;
+            } catch (error) {
+                console.error("학습 평가 오류:", error);
+                evaluationResults.innerHTML = `<p class="text-red-500">학습 평가에 실패했습니다. 다시 시도해주세요.</p>`;
+            } finally {
+                evaluateBtn.disabled = false;
+            }
+        }
+        
+        function expandRecursively(d) {
+            if (d._children) {
+                d.children = d._children;
+                d._children = null;
+            }
+            if (d.children) {
+                d.children.forEach(expandRecursively);
+            }
+        }
+
+        function collapseRecursively(d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children.forEach(collapseRecursively);
+                d.children = null;
+            }
+        }
+
+        // --- D3.js 마인드맵 렌더링 로직 ---
+        function renderMindmap(mindmapData) {
+            mindmapContainer.innerHTML = '';
+            const colors = ["#845ef7", "#5c7cfa", "#339af0", "#22b8cf", "#20c997", "#51cf66"];
+            const container = d3.select("#mindmap-container");
+            if (container.node() === null) return;
+            const width = container.node().getBoundingClientRect().width, height = container.node().getBoundingClientRect().height;
+            const svg = container.append("svg").attr("width", "100%").attr("height", "100%").attr("viewBox", [0, 0, width, height]);
+            const g = svg.append("g");
+            currentZoomBehavior = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+            svg.call(currentZoomBehavior);
+
+            let root; const duration = 750; 
+            root = d3.hierarchy(mindmapData, d => d.children);
+            mindmapRootNode = root;
+            root.x0 = 0; root.y0 = 0; 
+            
+            if (root.children) {
+                root.children.forEach(collapseRecursively);
+            }
+
+            const dryRunNodes = (() => { const tree = d3.tree().nodeSize([80, 200]); const treeData = tree(root); const nodes = treeData.descendants(); const tempSvg = d3.select("body").append("svg").attr("style", "position:absolute;visibility:hidden;"); nodes.forEach(d => { const textNode = tempSvg.append("text").style("font-size", "14px").style("font-weight", "500").text(d.data.keyword).node(); const bbox = textNode.getBBox(); d.width = bbox.width + 40; d.buttonX = d.width / 2 + 20; }); tempSvg.remove(); nodes.forEach(n => { if (n.depth > 0) n.y = n.parent.y + (n.parent.width / 2) + (n.width / 2) + 40; else n.y = 0; }); return nodes; })();
+            if (dryRunNodes.length > 0) { const xCoords = dryRunNodes.map(d => d.x); const yCoordsWithWidth = dryRunNodes.map(d => [d.y - d.width / 2, d.y + d.buttonX + 12]); const minX = d3.min(xCoords) - 40, maxX = d3.max(xCoords) + 40; const minY = d3.min(yCoordsWithWidth, d => d[0]), maxY = d3.max(yCoordsWithWidth, d => d[1]); const boundsWidth = maxY - minY, boundsHeight = maxX - minX; const scale = Math.min(1, 0.9 / Math.max(boundsWidth / width, boundsHeight / height)); const midX = minY + boundsWidth / 2, midY = minX + boundsHeight / 2; const initialTranslate = [width / 2 - scale * midX, height / 2 - scale * midY]; const initialTransform = d3.zoomIdentity.translate(initialTranslate[0], initialTranslate[1]).scale(scale); svg.call(currentZoomBehavior.transform, initialTransform); }
+            
+            const update = (source, originalRoot) => {
+                const tree = d3.tree().nodeSize([80, 200]); const treeData = tree(originalRoot); const nodes = treeData.descendants(); const links = treeData.links();
+                nodes.forEach(d => { if (!d.width) { const tempSvg = d3.select("body").append("svg").attr("style", "position:absolute;visibility:hidden;"); const textNode = tempSvg.append("text").style("font-size", "14px").style("font-weight", "500").text(d.data.keyword).node(); d.width = textNode.getBBox().width + 40; d.buttonX = d.width / 2 + 20; tempSvg.remove(); } });
+                nodes.forEach(n => { if (n.depth > 0) n.y = n.parent.y + (n.parent.width / 2) + (n.width / 2) + 40; else n.y = 0; });
+                const node = g.selectAll("g.node").data(nodes, d => d.data.id);
+                const nodeEnter = node.enter().append("g").attr("class", "node").attr("transform", d => `translate(${source.y0}, ${source.x0})`);
+                const nodeContent = nodeEnter.append("g").attr("class", "node-content").on('click', (event, d) => { event.stopPropagation(); showDetailsModal(d.data.description); });
+                nodeContent.append("rect").attr("width", 0).attr("height", 0).attr("rx", 10).style("fill", d => colors[d.depth % colors.length]);
+                nodeContent.append("text").attr("dy", "0.31em").attr("x", 0).attr("text-anchor", "middle").text(d => d.data.keyword).style("fill", "white").style("fill-opacity", 0);
+                const buttonGroup = nodeEnter.append('g').attr('class', 'button-group').on('click', (event, d) => { event.stopPropagation(); click(d, originalRoot); });
+                buttonGroup.append('circle').attr('r', 12); buttonGroup.append('text').attr('class', 'indicator-text').attr('dy', '0.35em').attr('text-anchor', 'middle').text(d => d._children ? '+' : d.children ? '-' : '');
+                const nodeUpdate = nodeEnter.merge(node); nodeUpdate.transition().duration(duration).attr("transform", d => `translate(${d.y}, ${d.x})`);
+                nodeUpdate.each(function(d) { const textNode = d3.select(this).select("text:not(.indicator-text)").node(); if (textNode) { const bbox = textNode.getBBox(); d3.select(this).select("rect").transition().duration(duration).attr("width", d.width).attr("height", bbox.height + 20).attr("x", -d.width / 2).attr("y", -bbox.height / 2 - 10); } });
+                nodeUpdate.select(".node-content text").transition().duration(duration).style("fill-opacity", 1);
+                nodeUpdate.select('.button-group').transition().duration(duration).attr('transform', d => `translate(${d.buttonX}, 0)`).style('display', d => (d.children || d._children) ? null : 'none');
+                nodeUpdate.select('.indicator-text').text(d => d._children ? '+' : d.children ? '-' : '');
+                node.exit().transition().duration(duration).attr("transform", d => `translate(${source.y}, ${source.x})`).style("opacity", 0).remove();
+                const link = g.selectAll("path.link").data(links, d => d.target.data.id);
+                function generateLinkPath(d) { const sourceX = d.source.y + d.source.buttonX, sourceY = d.source.x; const targetX = d.target.y - (d.target.width / 2), targetY = d.target.x; const midX = (sourceX + targetX) / 2; return `M${sourceX},${sourceY} C${midX},${sourceY} ${midX},${targetY} ${targetX},${targetY}`; }
+                const linkEnter = link.enter().insert("path", "g").attr("class", "link").attr("d", d => { const o = { y: source.y0 + source.buttonX, x: source.x0 }; return `M${o.y},${o.x} C${o.y},${o.x} ${o.y},${o.x} ${o.y},${o.x}`; });
+                const linkUpdate = linkEnter.merge(link); linkUpdate.transition().duration(duration).attr("d", generateLinkPath);
+                link.exit().transition().duration(duration).attr("d", d => { const o = { y: source.y + source.buttonX, x: source.x }; return `M${o.y},${o.x} C${o.y},${o.x} ${o.y},${o.x} ${o.y},${o.x}`; }).remove();
+                nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+            }
+            
+            updateMindmap = (source) => update(source, root);
+            function click(d, originalRoot) { if (d.children) { d._children = d.children; d.children = null; } else { d.children = d._children; d._children = null; } update(d, originalRoot); }
+            update(root, root);
+        }
+
+        expandAllBtn.onclick = () => {
+            if (!mindmapRootNode || !updateMindmap) return;
+            expandRecursively(mindmapRootNode);
+            updateMindmap(mindmapRootNode);
+        };
+
+        collapseAllBtn.onclick = () => {
+            if (!mindmapRootNode || !updateMindmap) return;
+            collapseRecursively(mindmapRootNode);
+            updateMindmap(mindmapRootNode);
+        };
+        
+        // --- 화면 맞춤 공통 함수 ---
+        function fitToScreen() {
+            const svgEl = mindmapContainer.querySelector('svg') || fullscreenMindmapTarget.querySelector('svg');
+            if (!svgEl || !currentZoomBehavior) return;
+            requestAnimationFrame(() => {
+                const svg = d3.select(svgEl);
+                const g = svg.select('g');
+                if (!g.node()) return;
+                const parent = svgEl.parentElement;
+                const newWidth = parent.clientWidth;
+                const newHeight = parent.clientHeight;
+                svg.attr('viewBox', `0 0 ${newWidth} ${newHeight}`);
+                const bounds = g.node().getBBox();
+                if (bounds.width === 0 || bounds.height === 0) return;
+                const midX = bounds.x + bounds.width / 2;
+                const midY = bounds.y + bounds.height / 2;
+                const scale = 0.9 / Math.max(bounds.width / newWidth, bounds.height / newHeight);
+                const translate = [newWidth / 2 - scale * midX, newHeight / 2 - scale * midY];
+                const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
+                svg.transition().duration(600).call(currentZoomBehavior.transform, transform);
+            });
+        }
+        
+        // --- 전체화면 로직 ---
+        fullscreenBtn.addEventListener('click', () => {
+            const mindmapSvg = mindmapContainer.querySelector('svg');
+            if (mindmapSvg && currentZoomBehavior) {
+                fullscreenMindmapTarget.appendChild(mindmapSvg);
+                fullscreenContainer.classList.remove('hidden');
+                fitToScreen();
+            }
+        });
+
+        fullscreenCloseBtn.addEventListener('click', () => {
+            const mindmapSvg = fullscreenMindmapTarget.querySelector('svg');
+            if (mindmapSvg) {
+                mindmapContainer.appendChild(mindmapSvg);
+                fullscreenContainer.classList.add('hidden');
+                fitToScreen();
+            }
+        });
+
+        fullscreenFitScreenBtn.addEventListener('click', fitToScreen);
+        fitScreenBtn.addEventListener('click', fitToScreen);
+
+        // --- 텍스트 전체화면 로직 ---
+        textFullscreenBtn.addEventListener('click', () => {
+            if (textInput) {
+                textFullscreenTarget.appendChild(textInput);
+                textInput.classList.add('h-full');
+                textFullscreenContainer.classList.remove('hidden');
+            }
+        });
+
+        textFullscreenCloseBtn.addEventListener('click', () => {
+            if (textInput) {
+                textInputParent.insertBefore(textInput, generateBtn);
+                textInput.classList.remove('h-full');
+                textFullscreenContainer.classList.add('hidden');
+            }
+        });
+        
+        // --- PDF 다운로드 로직 ---
+        downloadPdfBtn.addEventListener('click', async () => {
+            const root = mindmapRootNode;
+            if (!textInput.value || !root || evaluationResults.querySelector('p')) {
+                alert('PDF를 생성하려면 텍스트 입력, 마인드맵 생성, AI 평가가 모두 완료되어야 합니다.');
+                return;
+            }
+
+            downloadPdfBtn.disabled = true;
+            downloadPdfBtn.querySelector('span').textContent = 'PDF 생성 중...';
+
+            const initialCollapsedState = new Map();
+            if (root) {
+                root.descendants().forEach(d => {
+                    if(d._children) initialCollapsedState.set(d.data.id, true);
+                });
+            }
+            
+            if (expandAllBtn.onclick) expandAllBtn.onclick();
+            
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            const { jsPDF } = window.jspdf;
+            
+            try {
+                const printContainer = document.createElement('div');
+                printContainer.style.position = 'absolute';
+                printContainer.style.left = '-9999px';
+                printContainer.style.width = '794px';
+                printContainer.style.padding = '20px';
+                printContainer.style.backgroundColor = 'white';
+                printContainer.style.fontFamily = "'Gowun Dodum', sans-serif";
+                document.body.appendChild(printContainer);
+
+                const titleClone = document.getElementById('main-title').cloneNode(true);
+                titleClone.style.textAlign = 'center';
+                titleClone.style.marginBottom = '20px';
+                printContainer.appendChild(titleClone);
+
+                const goalsClone = learningGoalsContainer.cloneNode(true);
+                goalsClone.style.marginBottom = '20px';
+                printContainer.appendChild(goalsClone);
+
+                const gridContainer = document.createElement('div');
+                gridContainer.style.display = 'grid';
+                gridContainer.style.gridTemplateColumns = '1fr 1fr';
+                gridContainer.style.gap = '20px';
+                gridContainer.style.marginBottom = '20px';
+
+                const leftCol = document.createElement('div');
+                const textHeader = document.createElement('h2');
+                textHeader.textContent = '입력 텍스트';
+                textHeader.className = 'text-2xl font-bold text-gray-800 mb-4';
+                leftCol.appendChild(textHeader);
+                const textPara = document.createElement('p');
+                textPara.textContent = textInput.value;
+                textPara.style.whiteSpace = 'pre-wrap';
+                textPara.className = 'text-gray-700 p-4 border rounded-lg';
+                leftCol.appendChild(textPara);
+                gridContainer.appendChild(leftCol);
+
+                const rightCol = document.createElement('div');
+                const mapHeader = document.createElement('h2');
+                mapHeader.textContent = 'AI 생성 마인드맵';
+                mapHeader.className = 'text-2xl font-bold text-gray-800 mb-4';
+                rightCol.appendChild(mapHeader);
+                const svgClone = mindmapContainer.querySelector('svg').cloneNode(true);
+                svgClone.style.width = '100%';
+                svgClone.style.height = 'auto';
+                svgClone.style.border = '1px solid #e5e7eb';
+                svgClone.style.borderRadius = '0.5rem';
+                rightCol.appendChild(svgClone);
+                gridContainer.appendChild(rightCol);
+
+                printContainer.appendChild(gridContainer);
+                
+                const evalHeader = document.createElement('h2');
+                evalHeader.textContent = 'AI 학습 성취도 평가';
+                evalHeader.className = 'text-2xl font-bold text-gray-800 mb-4';
+                printContainer.appendChild(evalHeader);
+                const evalClone = evaluationResults.cloneNode(true);
+                printContainer.appendChild(evalClone);
+                
+                const canvas = await html2canvas(printContainer, { scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
+                
+                const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const ratio = canvas.width / canvas.height;
+
+                let finalWidth = pdfWidth - 40;
+                let finalHeight = finalWidth / ratio;
+                
+                if (finalHeight > pdfHeight - 40) {
+                    finalHeight = pdfHeight - 40;
+                    finalWidth = finalHeight * ratio;
+                }
+
+                const x = (pdfWidth - finalWidth) / 2;
+                const y = 20;
+
+                pdf.addImage(imgData, 'PNG', x, y, finalWidth, finalHeight);
+                pdf.save('AI_Mindmap_Report.pdf');
+
+            } catch (error) {
+                console.error('PDF 생성 오류:', error);
+                alert('PDF 생성 중 오류가 발생했습니다.');
+            } finally {
+                if(root){
+                    root.descendants().forEach(d => {
+                        if (initialCollapsedState.has(d.data.id)) {
+                           collapseRecursively(d);
+                        }
+                    });
+                    if(updateMindmap) updateMindmap(root);
+                }
+
+                document.body.removeChild(document.querySelector('div[style*="left: -9999px"]'));
+                downloadPdfBtn.disabled = false;
+                downloadPdfBtn.querySelector('span').textContent = 'PDF 다운로드';
+            }
+        });
+        
+        // --- 초기화 및 리사이즈 로직 ---
+        let resizeTimer;
+        function handleResize() { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (mindmapContainer.querySelector('svg')) { renderMindmap(aiMindmapJsonData); } }, 250); }
+        
+        window.addEventListener('load', () => { 
+            mindmapContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 p-4 text-center">마인드맵으로 변환할 텍스트를 왼쪽 창에 입력한 후, \'AI 마인드맵 생성\' 버튼을 클릭하세요.</div>';
+        });
+        window.addEventListener('resize', handleResize);
+    </script>
+</body>
+</html>
+
